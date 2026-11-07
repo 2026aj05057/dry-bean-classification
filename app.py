@@ -128,7 +128,3 @@ if uploaded_file is not None:
         )
 '''
 
-with open("dry_bean_classification/app.py", "w") as file:
-    file.write(app_code)
-
-print("Updated app.py created successfully!")
