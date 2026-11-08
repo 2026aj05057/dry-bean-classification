@@ -11,9 +11,13 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
-    matthews_corrcoef
+    matthews_corrcoef,
+    confusion_matrix,
+    classification_report
 )
+
 from sklearn.preprocessing import label_binarize
+
 
 # Page configuration
 st.set_page_config(
@@ -23,10 +27,15 @@ st.set_page_config(
 )
 
 st.title("🌱 Dry Bean Classification")
-st.write("Predict Dry Bean varieties using five Machine Learning classifiers.")
+
+st.write(
+    "Predict Dry Bean varieties using five Machine Learning classifiers."
+)
+
 
 # Model directory
 MODEL_DIR = "model"
+
 
 # Available models
 models = {
@@ -37,6 +46,7 @@ models = {
     "Support Vector Machine": "svm.joblib"
 }
 
+
 # Expected input features
 features = [
     "Area", "Perimeter", "MajorAxisLength", "MinorAxisLength",
@@ -45,7 +55,8 @@ features = [
     "ShapeFactor1", "ShapeFactor2", "ShapeFactor3", "ShapeFactor4"
 ]
 
-# Models that require feature scaling
+
+# Models requiring feature scaling
 scaled_models = [
     "Logistic Regression",
     "K-Nearest Neighbors",
@@ -53,7 +64,8 @@ scaled_models = [
     "Support Vector Machine"
 ]
 
-# Calculate multiclass AUC
+
+# Function to calculate multiclass AUC
 def calculate_auc(model, X_input, actual):
 
     classes = model.classes_
@@ -89,17 +101,19 @@ def calculate_auc(model, X_input, actual):
     return np.mean(auc_values) if auc_values else np.nan
 
 
-# Select model for displaying individual predictions
+# Model selection dropdown
 selected_model = st.selectbox(
-    "Choose a classification model for prediction results",
+    "Choose a classification model",
     list(models.keys())
 )
 
-# Upload CSV
+
+# Upload test CSV
 uploaded_file = st.file_uploader(
     "Upload test CSV containing all 16 features and the Class column",
     type=["csv"]
 )
+
 
 if uploaded_file is not None:
 
@@ -107,7 +121,8 @@ if uploaded_file is not None:
 
     required_columns = features + ["Class"]
 
-    # Validate uploaded CSV
+
+    # Validate uploaded dataset
     if not all(column in data.columns for column in required_columns):
 
         st.error(
@@ -131,41 +146,57 @@ if uploaded_file is not None:
         X = data[features]
         actual = data["Class"]
 
+
         # Load saved scaler
         scaler = joblib.load(
             os.path.join(MODEL_DIR, "scaler.joblib")
         )
 
-        # Store predictions and evaluation metrics
+
+        # Store predictions and loaded models
         all_predictions = {}
+        loaded_models = {}
         evaluation_results = []
 
+
         st.info(
-            "Evaluating all five previously trained models. "
+            "Evaluating all five saved models on the uploaded test data. "
             "No model retraining is performed."
         )
+
 
         # Evaluate all five saved models
         for model_name, model_file in models.items():
 
-            # Load saved model
+            # Load saved trained model
             model = joblib.load(
                 os.path.join(MODEL_DIR, model_file)
             )
 
+            loaded_models[model_name] = model
+
+
             # Apply scaling where required
             if model_name in scaled_models:
+
                 X_input = scaler.transform(X)
+
             else:
+
                 X_input = X
+
 
             # Generate predictions
             predictions = model.predict(X_input)
 
             all_predictions[model_name] = predictions
 
+
             # Calculate evaluation metrics
-            accuracy = accuracy_score(actual, predictions)
+            accuracy = accuracy_score(
+                actual,
+                predictions
+            )
 
             auc = calculate_auc(
                 model,
@@ -199,7 +230,10 @@ if uploaded_file is not None:
                 predictions
             )
 
+
+            # Store evaluation results
             evaluation_results.append({
+
                 "ML Model Name": model_name,
                 "Accuracy": accuracy,
                 "AUC": auc,
@@ -207,10 +241,14 @@ if uploaded_file is not None:
                 "Recall": recall,
                 "F1 Score": f1,
                 "MCC": mcc
+
             })
 
-        # Display evaluation comparison
-        st.success("All five models evaluated successfully!")
+
+        # Model performance comparison
+        st.success(
+            "All five models evaluated successfully!"
+        )
 
         st.subheader("📊 Model Performance Comparison")
 
@@ -229,10 +267,15 @@ if uploaded_file is not None:
             hide_index=True
         )
 
-        # Display selected model prediction results
-        st.subheader("Prediction Results")
 
+        # Selected model predictions
         selected_predictions = all_predictions[selected_model]
+
+        selected_model_object = loaded_models[selected_model]
+
+
+        # Prediction results
+        st.subheader("Prediction Results")
 
         results = data.copy()
 
@@ -243,7 +286,10 @@ if uploaded_file is not None:
             for a, p in zip(actual, selected_predictions)
         ]
 
+
+        # Evaluation summary
         correct = (actual == selected_predictions).sum()
+
         incorrect = len(selected_predictions) - correct
 
         accuracy = accuracy_score(
@@ -251,27 +297,106 @@ if uploaded_file is not None:
             selected_predictions
         ) * 100
 
-        st.write(f"Selected Model: **{selected_model}**")
 
         col1, col2, col3, col4 = st.columns(4)
 
-        col1.metric("Total Predictions", len(selected_predictions))
-        col2.metric("Accuracy", f"{accuracy:.2f}%")
-        col3.metric("Correct Predictions", correct)
-        col4.metric("Incorrect Predictions", incorrect)
+        col1.metric(
+            "Total Predictions",
+            len(selected_predictions)
+        )
+
+        col2.metric(
+            "Accuracy",
+            f"{accuracy:.2f}%"
+        )
+
+        col3.metric(
+            "Correct Predictions",
+            correct
+        )
+
+        col4.metric(
+            "Incorrect Predictions",
+            incorrect
+        )
+
+
+        # Confusion Matrix
+        st.subheader("📌 Confusion Matrix")
+
+        cm = confusion_matrix(
+            actual,
+            selected_predictions,
+            labels=selected_model_object.classes_
+        )
+
+        cm_df = pd.DataFrame(
+            cm,
+            index=selected_model_object.classes_,
+            columns=selected_model_object.classes_
+        )
+
+        cm_df.index.name = "Actual Class"
+
+        cm_df.columns.name = "Predicted Class"
+
+        st.write(
+            f"Confusion Matrix for **{selected_model}**"
+        )
+
+        st.dataframe(
+            cm_df,
+            use_container_width=True
+        )
+
+
+        # Classification Report
+        st.subheader("📋 Classification Report")
+
+        report = classification_report(
+            actual,
+            selected_predictions,
+            labels=selected_model_object.classes_,
+            target_names=[
+                str(c) for c in selected_model_object.classes_
+            ],
+            output_dict=True,
+            zero_division=0
+        )
+
+        report_df = pd.DataFrame(report).transpose()
+
+        st.write(
+            f"Classification Report for **{selected_model}**"
+        )
+
+        st.dataframe(
+            report_df.style.format({
+                "precision": "{:.4f}",
+                "recall": "{:.4f}",
+                "f1-score": "{:.4f}"
+            }),
+            use_container_width=True
+        )
+
+
+        # Display prediction results
+        st.subheader("Detailed Prediction Results")
 
         st.dataframe(
             results,
             use_container_width=True
         )
 
-        # Download predictions
+
+        # Download prediction results
         st.download_button(
             label="Download Predictions",
             data=results.to_csv(index=False).encode("utf-8"),
             file_name="dry_bean_predictions.csv",
             mime="text/csv"
         )
+
 
         # Download model comparison
         st.download_button(
